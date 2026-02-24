@@ -1,0 +1,6 @@
+[submodule "repos/product"]
+	path = repos/product
+	url = https://github.com/nuitsjp/azure-blob-storage-site-deploy.git
+[submodule "repos/e2e"]
+	path = repos/e2e
+	url = https://github.com/nuitsjp/azure-blob-storage-site-deploy-e2e.git
