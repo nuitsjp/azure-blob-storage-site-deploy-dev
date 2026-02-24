@@ -39,31 +39,40 @@ git -C repos/product log --oneline -n 10
 git -C repos/e2e log --oneline -n 10
 ```
 
-Product リポジトリで Bash スクリプト実装後:
+テスト実行:
 ```bash
-# ユニットテスト（bats-core）
-bats repos/product/tests/unit/test_validate.bats
-bats repos/product/tests/unit/test_prefix.bats
+# 単体テスト + フローテスト（デフォルト）
+./test.sh
 
-# フローテスト（Azure モック使用）
-bats repos/product/tests/flow/test_deploy.bats
-bats repos/product/tests/flow/test_cleanup.bats
+# 単体テストのみ / フローテストのみ
+./test.sh unit
+./test.sh flow
 ```
 
-E2E 検証スクリプト:
+E2Eテスト:
 ```bash
-# HTTP エンドポイント検証（リトライ付き）
-bash repos/e2e/e2e/verify.sh <URL> --contains <text> [--retries N] [--interval S]
+# ライフサイクル全体の E2E テスト（Azure 環境必要）
+./e2e/orchestrator.sh
+```
+
+リリース:
+```bash
+# 指定バージョンでリリース
+./release.sh v1.2.3
+
+# パッチバージョンを自動インクリメント
+./release.sh
 ```
 
 ## Design Documents
 
 設計ドキュメントはメタリポジトリの `docs/` に集約:
 
-- [`docs/Architecture.md`](docs/Architecture.md) — 実装構成、スクリプト分割、テスト戦略
-- [`docs/Design.md`](docs/Design.md) — プロダクト/運用設計（要件・制約・インターフェース）
+- [`docs/design.md`](docs/design.md) — プロダクト設計（背景・要件・制約・インターフェース）
+- [`docs/architecture.md`](docs/architecture.md) — 実装構成とスクリプト分割
 - [`docs/deploy.md`](docs/deploy.md) — deploy.sh の詳細設計
 - [`docs/cleanup.md`](docs/cleanup.md) — cleanup.sh の詳細設計
+- [`docs/e2e.md`](docs/e2e.md) — E2Eテストの詳細設計
 
 ## Architecture
 
@@ -79,14 +88,18 @@ bash repos/e2e/e2e/verify.sh <URL> --contains <text> [--retries N] [--interval S
 
 テスト時は `tests/helpers/mock_azure.sh` で `az` 関数をモックに差し替え、呼び出し引数をログファイルに記録してアサーションする。
 
-### E2E (`repos/e2e`) — E2E テスト
+### E2E (`repos/e2e`) — E2E テスト用リポジトリ
 
-実装済み。主要ファイル:
+Composite Actionの「利用者」として最低限必要なリソースのみ配置:
 
 - `.github/workflows/deploy.yml` — push/PR トリガーのデプロイワークフロー
-- `.github/workflows/e2e-orchestrator.yml` — ライフサイクル全体の自動 E2E テスト（main push → PR 作成 → PR 更新 → PR クローズの一連を検証）
-- `e2e/verify.sh` — HTTP 検証スクリプト（リトライ・タイムアウト・コンテンツ検証）
 - `docs/` — テスト用静的サイトコンテンツ
+
+E2Eテストの実行スクリプトはdevリポジトリの `e2e/` に配置:
+
+- `e2e/orchestrator.sh` — ライフサイクル全体のE2Eシナリオ実行
+- `e2e/lib.sh` — 共有ヘルパー関数
+- `e2e/verify.sh` — HTTP 検証スクリプト（リトライ・コンテンツ検証）
 
 ### Test Strategy
 
@@ -94,9 +107,9 @@ bash repos/e2e/e2e/verify.sh <URL> --contains <text> [--retries N] [--interval S
 |---|---|---|---|
 | 単体テスト | `repos/product/tests/unit/` | 不要 | PR 作成・更新時 |
 | フローテスト | `repos/product/tests/flow/`（az モック） | 不要 | PR 作成・更新時 |
-| E2E テスト | `repos/e2e`（外部リポジトリ） | 必要 | 手動 / リリース前 |
+| E2E テスト | `e2e/`（devリポジトリからローカル実行） | 必要 | 手動 / リリース前 |
 
-CI は `.github/workflows/test-unit.yml` で PR ごとに単体テスト・フローテストを実行。
+CI は `repos/product/.github/workflows/test-unit.yml` で PR ごとに単体テスト・フローテストを実行。
 
 ### Key Design Decisions
 

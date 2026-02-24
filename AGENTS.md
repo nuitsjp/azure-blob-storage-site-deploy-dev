@@ -24,10 +24,11 @@
 
 設計ドキュメントは `docs/` に集約:
 
-- `docs/Architecture.md` — 実装構成、スクリプト分割、テスト戦略
-- `docs/Design.md` — プロダクト/運用設計（要件・制約・インターフェース）
+- `docs/design.md` — プロダクト設計（背景・要件・制約・インターフェース）
+- `docs/architecture.md` — 実装構成とスクリプト分割
 - `docs/deploy.md` — deploy.shの詳細設計
 - `docs/cleanup.md` — cleanup.shの詳細設計
+- `docs/e2e.md` — E2Eテストの詳細設計
 
 ## よく使うコマンド
 
@@ -36,12 +37,24 @@ git submodule update --init --recursive
 git submodule status --recursive
 git -C repos/product status
 git -C repos/e2e status
+
+# テスト実行
+./test.sh          # 単体テスト + フローテスト
+./test.sh unit     # 単体テストのみ
+./test.sh flow     # フローテストのみ
+
+# E2Eテスト（Azure環境必要）
+./e2e/orchestrator.sh
+
+# リリース
+./release.sh v1.2.3   # 指定バージョンでリリース
+./release.sh          # パッチバージョンを自動インクリメント
 ```
 
 ## テストガイドライン
 
 - 実装コードを追加する際は、`tests/`のBats構造に従ってテストも追加する。
-- テスト優先順位: 純粋関数の単体テスト → モック付きフローテスト → E2Eテスト（外部リポジトリ`repos/e2e`）。
+- テスト優先順位: 純粋関数の単体テスト → モック付きフローテスト → E2Eテスト。
 - PR作成前に、変更範囲に応じたテスト/検証コマンドを必ず実行する。
 
 ## コミット・PRガイドライン
