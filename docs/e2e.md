@@ -1,351 +1,353 @@
-# E2Eテスト設計
+> [日本語版](e2e.ja.md)
 
-## 概要
+# E2E Test Design
 
-E2Eテストは、Composite Action（`azure-blob-storage-site-deploy`）が実際のAzure Blob Storage環境上で正しく動作することを検証する。単体テスト・フローテストではモックで代替していたAzure操作を、実リソースに対して実行し、HTTPアクセスによるコンテンツ配信まで含めたエンドツーエンドの正当性を確認する。
+## Overview
 
-### 目的
+E2E tests verify that the Composite Action (`azure-blob-storage-site-deploy`) works correctly on an actual Azure Blob Storage environment. Unlike unit tests and flow tests that substitute Azure operations with mocks, E2E tests execute against real resources and confirm end-to-end correctness including content delivery via HTTP access.
 
-1. **ライフサイクル全体の検証**: main push → PR作成 → PR更新 → PRクローズという一連のイベントで、デプロイ・更新・削除が正しく行われることを確認する
-2. **ファイル同期の検証**: delete-batch → upload-batchのクリーンデプロイ方式が、ファイルの追加・更新・削除を正確にBlob側へ反映することを確認する
-3. **実利用構成での検証**: テスト用リポジトリから外部actionとして参照する構成で実行するため、公開後の利用者と同じ条件でテストできる
+### Goals
 
-### テストケース
+1. **Full lifecycle verification**: Confirm that deploy, update, and cleanup work correctly across the sequence of events: main push, PR creation, PR update, and PR close
+2. **File synchronization verification**: Confirm that the clean deploy approach (delete-batch followed by upload-batch) accurately reflects file additions, updates, and deletions on the Blob side
+3. **Real-world configuration verification**: Tests run from a separate test repository referencing the action externally, matching the same conditions as actual end users after publication
 
-| 検証項目 | 確認内容 |
+### Test Cases
+
+| Test Item | Verification |
 |---|---|
-| mainブランチデプロイ | pushトリガーでコンテンツがアップロードされ、HTTPアクセスで取得できる |
-| PRステージング作成 | PR作成時に `pr-<番号>` プレフィックスでデプロイされる |
-| PRステージング更新 | PRブランチへのpush時にコンテンツが更新され、削除ファイルがBlob側から消える |
-| PRステージング削除 | PRクローズ時にプレフィックス配下が全削除される（404が返る） |
+| Main branch deploy | Content is uploaded via push trigger and retrievable via HTTP access |
+| PR staging creation | Deployed with `pr-<number>` prefix when a PR is created |
+| PR staging update | Content is updated on push to PR branch, and deleted files are removed from Blob side |
+| PR staging deletion | All files under the prefix are deleted on PR close (returns 404) |
 
 ---
 
-## テスト用リポジトリを分離する理由
+## Why Use a Separate Test Repository
 
-E2Eテストはproductリポジトリ（`azure-blob-storage-site-deploy`）とは別の専用リポジトリ（`azure-blob-storage-site-deploy-e2e`）で実行する。
+E2E tests run in a dedicated repository (`azure-blob-storage-site-deploy-e2e`), separate from the product repository (`azure-blob-storage-site-deploy`).
 
-1. **ワークフロー干渉の回避**: productリポジトリ内でE2Eを行うと、テスト用のPR作成・クローズがaction自体の開発ワークフローと干渉する
-2. **自由なブランチ操作**: テスト用リポジトリであれば、テスト目的のブランチ操作やPR作成を制限なく行える
-3. **実利用と同一構成**: 実際の利用者と同じ「外部からactionを `uses:` で参照する」構成でテストできる
-
----
-
-## ローカル実行とする理由
-
-オーケストレーターはGitHub Actionsワークフローとしてではなく、**開発マシンからローカル実行するシェルスクリプト**として実装する。
-
-1. **`GITHUB_TOKEN` の制限回避**: GitHub Actions内で `GITHUB_TOKEN` を使ったpushやPR作成は、新しいワークフロー実行をトリガーしない（再帰防止の仕様）。ローカルからのユーザー認証による操作であれば `deploy.yml` が自然に発火する
-2. **実行タイミングとの整合**: E2Eテストは実装修正後に手動で実行するものであり、CIで自動化する必要がない
-3. **デバッグ容易性**: ターミナルでリアルタイムに進行状況を確認でき、失敗時の原因特定が容易
+1. **Avoiding workflow interference**: Running E2E within the product repository would cause test PR creation and closing to interfere with the action's own development workflows
+2. **Unrestricted branch operations**: A dedicated test repository allows unrestricted branch operations and PR creation for testing purposes
+3. **Identical configuration to real usage**: Tests use the same "referencing the action externally via `uses:`" configuration as actual users
 
 ---
 
-## リポジトリ構成
+## Why Run Locally
 
-テスト関連リソースは2つのリポジトリに分かれる。
+The orchestrator is implemented as a **shell script run locally from the development machine**, rather than as a GitHub Actions workflow.
 
-### e2eリポジトリ（`azure-blob-storage-site-deploy-e2e`）
+1. **Bypassing `GITHUB_TOKEN` limitations**: Pushes and PR creations using `GITHUB_TOKEN` within GitHub Actions do not trigger new workflow runs (a recursion prevention mechanism). User-authenticated operations from local naturally trigger `deploy.yml`
+2. **Alignment with execution timing**: E2E tests are run manually after implementation changes and do not need CI automation
+3. **Ease of debugging**: Progress can be monitored in real time from the terminal, making it easy to identify the cause of failures
 
-Composite Actionの「利用者」として最低限必要なリソースのみ配置する。
+---
+
+## Repository Structure
+
+Test-related resources are split across two repositories.
+
+### E2E Repository (`azure-blob-storage-site-deploy-e2e`)
+
+Contains only the minimum resources needed as a "consumer" of the Composite Action.
 
 ```
 azure-blob-storage-site-deploy-e2e/
 ├── .github/workflows/
-│   └── deploy.yml              # Composite Actionを呼び出すワークフロー（テスト対象）
-├── docs/                       # テスト用の静的サイトソース
-│   ├── index.html              # メインページ
+│   └── deploy.yml              # Workflow that invokes the Composite Action (test target)
+├── docs/                       # Static site source for testing
+│   ├── index.html              # Main page
 │   └── sub/
-│       └── page.html           # サブディレクトリ配信確認用
+│       └── page.html           # For verifying subdirectory delivery
 └── README.md
 ```
 
-### devリポジトリ（`azure-blob-storage-site-deploy-dev`）
+### Dev Repository (`azure-blob-storage-site-deploy-dev`)
 
-テスト実行側のスクリプトを配置する。
+Contains the test execution scripts.
 
 ```
 azure-blob-storage-site-deploy-dev/
 ├── scripts/
-│   ├── test.sh                  # テスト共通ランナー（unit / flow / e2e の入口）
+│   ├── test.sh                  # Common test runner (entry point for unit / flow / e2e)
 │   └── e2e/
-│       ├── orchestrator.sh     # E2Eシナリオ実行スクリプト（エントリーポイント）
-│       ├── lib.sh              # 共有ヘルパー関数
-│       └── verify.sh           # HTTP検証スクリプト（リトライ・コンテンツ検証）
+│       ├── orchestrator.sh     # E2E scenario execution script (entry point)
+│       ├── lib.sh              # Shared helper functions
+│       └── verify.sh           # HTTP verification script (retry and content verification)
 ├── repos/
-│   ├── product/                # サブモジュール: Composite Action本体
-│   └── e2e/                    # サブモジュール: E2Eテスト用リポジトリ
+│   ├── product/                # Submodule: Composite Action itself
+│   └── e2e/                    # Submodule: E2E test repository
 └── docs/
-    └── e2e.md                  # 本書
+    └── e2e.md                  # This document
 ```
 
 ---
 
-## deploy.yml — デプロイ・クリーンアップワークフロー
+## deploy.yml — Deploy and Cleanup Workflow
 
-Composite Actionの実利用者が記述するワークフローと同等の構成。push/PRイベントに応じてデプロイまたはクリーンアップを実行する。
+A workflow configuration equivalent to what real users of the Composite Action would write. Executes deploy or cleanup in response to push/PR events.
 
-### トリガー
+### Triggers
 
-| イベント | 条件 | 実行ジョブ |
+| Event | Condition | Job Executed |
 |---|---|---|
-| `push` | `main` ブランチ | deploy |
-| `pull_request` opened / synchronize / reopened | PR作成・更新時 | deploy |
-| `pull_request` closed | PRクローズ時 | cleanup |
+| `push` | `main` branch | deploy |
+| `pull_request` opened / synchronize / reopened | PR creation or update | deploy |
+| `pull_request` closed | PR close | cleanup |
 
-### ジョブ構成
+### Job Structure
 
 ```mermaid
 flowchart TD
     subgraph deploy.yml
         direction TB
-        E{イベント種別}
-        E -->|push / PR open・update| DJ[deploy ジョブ]
-        E -->|PR closed| CJ[cleanup ジョブ]
+        E{Event Type}
+        E -->|push / PR open or update| DJ[deploy job]
+        E -->|PR closed| CJ[cleanup job]
         DJ --> AZ1[Azure Login OIDC]
-        AZ1 --> EP[Static Website Endpoint 取得]
+        AZ1 --> EP[Get Static Website Endpoint]
         EP --> DA[Composite Action<br/>action=deploy]
-        DA --> URL[site_url 出力]
-        URL --> CMT[PRコメント投稿<br/>ステージングURL通知]
+        DA --> URL[site_url output]
+        URL --> CMT[Post PR comment<br/>staging URL notification]
         CJ --> AZ2[Azure Login OIDC]
         AZ2 --> CA[Composite Action<br/>action=cleanup]
     end
 ```
 
-### 同時実行制御
+### Concurrency Control
 
-デプロイ先プレフィックスをconcurrencyグループキーとし、同一PR内の連続pushでは先行ジョブをキャンセルする。
+The deploy destination prefix is used as the concurrency group key, so consecutive pushes within the same PR cancel the preceding job.
 
 ---
 
-## orchestrator.sh — E2Eシナリオオーケストレーター
+## orchestrator.sh — E2E Scenario Orchestrator
 
-### 目的
+### Purpose
 
-ローカルから `git` / `gh` CLIを使ってpush・PR作成・PR更新・PRクローズの一連のイベントを発生させ、各ステップ後にHTTPアクセスで結果を検証する。ライフサイクル全体を1回の実行で自動検証する。
+Uses `git` / `gh` CLI from local to generate a sequence of events (push, PR creation, PR update, PR close), verifying results via HTTP access after each step. Automatically verifies the entire lifecycle in a single run.
 
-### 実行方法
+### How to Run
 
 ```bash
-# 推奨: 共通ランナー経由
+# Recommended: via the common runner
 ./scripts/test.sh e2e
 
-# 下位入口を直接実行する場合
+# Running the sub-entry point directly
 ./scripts/e2e/orchestrator.sh
 ```
 
-`scripts/test.sh e2e` は前提条件チェックと実行サマリーを共通形式で提供し、内部で `scripts/e2e/orchestrator.sh` を呼び出す。E2Eの実行ロジック自体は引き続き `scripts/e2e/` 配下に配置する。
+`scripts/test.sh e2e` provides prerequisite checks and an execution summary in a common format, internally calling `scripts/e2e/orchestrator.sh`. The E2E execution logic itself remains under `scripts/e2e/`.
 
-前提条件:
-- `gh` CLIでログイン済み（`gh auth status`で確認）
-- e2eリポジトリのサブモジュールが初期化済み（`git submodule update --init --recursive`）
-- `jq`がインストール済み
+Prerequisites:
+- Logged in with `gh` CLI (verify with `gh auth status`)
+- E2E repository submodule initialized (`git submodule update --init --recursive`)
+- `jq` installed
 
-### スクリプト構成
+### Script Structure
 
-| ファイル | 役割 |
+| File | Role |
 |---|---|
-| `scripts/test.sh` | テスト共通ランナー。`e2e` サブコマンドで前提条件チェック後にオーケストレーターを呼び出す |
-| `scripts/e2e/orchestrator.sh` | シナリオ実行のエントリーポイント。Stage 1〜4を順次実行し、終了時にクリーンアップ |
-| `scripts/e2e/lib.sh` | 共有ヘルパー関数（`log`, `now_utc`, `gh_json`, `wait_deploy_workflow`） |
-| `scripts/e2e/verify.sh` | HTTP検証スクリプト（リトライ・コンテンツ検証） |
+| `scripts/test.sh` | Common test runner. Checks prerequisites with the `e2e` subcommand, then invokes the orchestrator |
+| `scripts/e2e/orchestrator.sh` | Entry point for scenario execution. Runs Stages 1-4 sequentially and cleans up on exit |
+| `scripts/e2e/lib.sh` | Shared helper functions (`log`, `now_utc`, `gh_json`, `wait_deploy_workflow`) |
+| `scripts/e2e/verify.sh` | HTTP verification script (retry and content verification) |
 
-`scripts/e2e/orchestrator.sh` は `repos/e2e/` ディレクトリ内でgit操作を行い、e2eリポジトリに対してpush / PR作成を実行する。`scripts/test.sh e2e` はその上位入口として扱う。
+`scripts/e2e/orchestrator.sh` performs git operations within the `repos/e2e/` directory, executing pushes and PR creation against the E2E repository. `scripts/test.sh e2e` serves as the higher-level entry point.
 
-### シーケンス図
+### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant O as orchestrator.sh<br/>(ローカル)
-    participant GH as GitHub<br/>(e2eリポジトリ)
+    participant O as orchestrator.sh<br/>(local)
+    participant GH as GitHub<br/>(e2e repository)
     participant DW as deploy.yml
     participant AZ as Azure Blob Storage
-    participant V as verify.sh<br/>(ローカル)
+    participant V as verify.sh<br/>(local)
 
-    Note over O: 変数準備
+    Note over O: Prepare variables
     O->>O: BASE_URL, SITE_NAME="e2e-test"<br/>TEST_BRANCH="e2e-orch-{timestamp}"
 
     rect rgb(240, 240, 255)
         Note over O,V: Stage 1: Main Push
-        O->>GH: docs/index.html にマーカー追記 & push to main
-        GH->>DW: push イベント発火
-        O->>GH: ワークフロー完了をポーリング（最大10分）
-        DW->>AZ: deploy（e2e-test/main/）
+        O->>GH: Append marker to docs/index.html & push to main
+        GH->>DW: push event fired
+        O->>GH: Poll for workflow completion (up to 10 min)
+        DW->>AZ: deploy (e2e-test/main/)
         O->>V: verify.sh ${BASE_URL}/e2e-test/main/<br/>--contains "${main_marker}"
-        V->>AZ: HTTP GET → 200 & マーカー文字列確認
+        V->>AZ: HTTP GET -> 200 & verify marker string
         V-->>O: OK
     end
 
     rect rgb(240, 255, 240)
         Note over O,V: Stage 2: PR Create
-        O->>GH: テストブランチ作成
-        O->>GH: docs/index.html 変更 + docs/obsolete.txt 追加
-        O->>GH: PR作成
-        GH->>DW: pull_request opened イベント発火
-        O->>GH: ワークフロー完了をポーリング
-        DW->>AZ: deploy（e2e-test/pr-{number}/）
+        O->>GH: Create test branch
+        O->>GH: Modify docs/index.html + add docs/obsolete.txt
+        O->>GH: Create PR
+        GH->>DW: pull_request opened event fired
+        O->>GH: Poll for workflow completion
+        DW->>AZ: deploy (e2e-test/pr-{number}/)
         O->>V: verify.sh ${BASE_URL}/e2e-test/pr-{number}/<br/>--contains "${pr_marker}"
-        V->>AZ: HTTP GET → 200 & マーカー確認
+        V->>AZ: HTTP GET -> 200 & verify marker
         V-->>O: OK
-        O->>V: verify.sh obsolete.txt → 200
-        V-->>O: OK（ファイル存在確認）
+        O->>V: verify.sh obsolete.txt -> 200
+        V-->>O: OK (file existence confirmed)
     end
 
     rect rgb(255, 255, 230)
         Note over O,V: Stage 3: PR Update
-        O->>GH: docs/index.html 変更 + docs/fresh.txt 追加<br/>+ docs/obsolete.txt 削除
-        GH->>DW: pull_request synchronize イベント発火
-        O->>GH: ワークフロー完了をポーリング
-        DW->>AZ: deploy（e2e-test/pr-{number}/）
-        O->>V: verify.sh 新マーカー確認 → 200
+        O->>GH: Modify docs/index.html + add docs/fresh.txt<br/>+ delete docs/obsolete.txt
+        GH->>DW: pull_request synchronize event fired
+        O->>GH: Poll for workflow completion
+        DW->>AZ: deploy (e2e-test/pr-{number}/)
+        O->>V: verify.sh new marker confirmed -> 200
         V-->>O: OK
-        O->>V: verify.sh fresh.txt → 200
-        V-->>O: OK（新規ファイル存在）
-        O->>V: verify.sh obsolete.txt → 404
-        V-->>O: OK（削除ファイル不在確認）
+        O->>V: verify.sh fresh.txt -> 200
+        V-->>O: OK (new file exists)
+        O->>V: verify.sh obsolete.txt -> 404
+        V-->>O: OK (deleted file absence confirmed)
     end
 
     rect rgb(255, 240, 240)
         Note over O,V: Stage 4: PR Close
-        O->>GH: PR をクローズ
-        GH->>DW: pull_request closed イベント発火
-        O->>GH: ワークフロー完了をポーリング
-        DW->>AZ: cleanup（e2e-test/pr-{number}/ 全削除）
-        O->>V: verify.sh ${BASE_URL}/e2e-test/pr-{number}/ → 404
-        V-->>O: OK（ステージング環境が削除された）
+        O->>GH: Close PR
+        GH->>DW: pull_request closed event fired
+        O->>GH: Poll for workflow completion
+        DW->>AZ: cleanup (e2e-test/pr-{number}/ full deletion)
+        O->>V: verify.sh ${BASE_URL}/e2e-test/pr-{number}/ -> 404
+        V-->>O: OK (staging environment deleted)
     end
 
-    Note over O: 後片付け: テストブランチ削除
+    Note over O: Cleanup: delete test branch
 ```
 
-### シナリオステップの詳細
+### Scenario Step Details
 
 #### Stage 1: Main Push
 
-mainブランチへのpushでデプロイが正しく動作することを検証する。
+Verifies that deploy works correctly on push to the main branch.
 
-| 操作 | 検証内容 |
+| Operation | Verification |
 |---|---|
-| `docs/index.html` にユニークマーカー文字列を追記し、mainにpush | `${BASE_URL}/e2e-test/main/` がHTTP 200を返し、マーカー文字列を含む |
+| Append a unique marker string to `docs/index.html` and push to main | `${BASE_URL}/e2e-test/main/` returns HTTP 200 and contains the marker string |
 
-マーカー文字列にはタイムスタンプを含め、過去のデプロイ結果のキャッシュではなく今回のデプロイ結果であることを保証する。
+The marker string includes a timestamp to guarantee it reflects the current deploy result rather than a cached result from a previous deploy.
 
 #### Stage 2: PR Create
 
-PRの作成時にステージング環境が正しく作成されることを検証する。
+Verifies that a staging environment is correctly created when a PR is opened.
 
-| 操作 | 検証内容 |
+| Operation | Verification |
 |---|---|
-| テストブランチを作成し、`docs/index.html` を変更、`docs/obsolete.txt` を追加してPRを作成 | `${BASE_URL}/e2e-test/pr-{number}/` がHTTP 200を返し、PRマーカーを含む |
-| — | `obsolete.txt` がHTTP 200でアクセスできる |
+| Create a test branch, modify `docs/index.html`, add `docs/obsolete.txt`, and create a PR | `${BASE_URL}/e2e-test/pr-{number}/` returns HTTP 200 and contains the PR marker |
+| — | `obsolete.txt` is accessible with HTTP 200 |
 
 #### Stage 3: PR Update
 
-PRブランチへの追加pushで、ファイルの追加・更新・削除がすべて正しく反映されることを検証する。これはクリーンデプロイ方式（delete-batch → upload-batch）の中核的な検証項目である。
+Verifies that file additions, updates, and deletions are all correctly reflected on additional pushes to the PR branch. This is the core verification of the clean deploy approach (delete-batch followed by upload-batch).
 
-| 操作 | 検証内容 |
+| Operation | Verification |
 |---|---|
-| `docs/index.html` を再変更、`docs/fresh.txt` を追加、`docs/obsolete.txt` を削除してpush | 新マーカーが反映されている（コンテンツ更新） |
-| — | `fresh.txt` がHTTP 200でアクセスできる（ファイル追加） |
-| — | `obsolete.txt` がHTTP 404を返す（ファイル削除の反映） |
+| Re-modify `docs/index.html`, add `docs/fresh.txt`, delete `docs/obsolete.txt`, and push | New marker is reflected (content update) |
+| — | `fresh.txt` is accessible with HTTP 200 (file addition) |
+| — | `obsolete.txt` returns HTTP 404 (file deletion reflected) |
 
-`obsolete.txt` の404確認は、delete-batchによる全削除が正しく行われていることの証拠となる。upload-batchだけでは古いファイルが残り続けるため、この検証は不可欠である。
+The 404 confirmation for `obsolete.txt` serves as evidence that the delete-batch full deletion is working correctly. Without it, upload-batch alone would leave old files behind, making this verification essential.
 
 #### Stage 4: PR Close
 
-PRクローズ時にステージング環境が完全に削除されることを検証する。
+Verifies that the staging environment is completely deleted when a PR is closed.
 
-| 操作 | 検証内容 |
+| Operation | Verification |
 |---|---|
-| PRをクローズ | `${BASE_URL}/e2e-test/pr-{number}/` がHTTP 404を返す |
+| Close the PR | `${BASE_URL}/e2e-test/pr-{number}/` returns HTTP 404 |
 
-### ワークフロー完了のポーリング
+### Workflow Completion Polling
 
-各ステージでGitHubイベントを発火させた後、対応する `deploy.yml` ワークフローの完了を待つ必要がある。
+After firing a GitHub event in each stage, the corresponding `deploy.yml` workflow completion must be awaited.
 
 ```
-ポーリング間隔: 5秒
-最大試行回数: 120回（= 最大10分）
-対象API: GET /repos/{owner}/{repo}/actions/runs
-フィルタ: ワークフロー名 + イベント種別 + head_sha
+Polling interval: 5 seconds
+Maximum attempts: 120 (= up to 10 minutes)
+Target API: GET /repos/{owner}/{repo}/actions/runs
+Filter: workflow name + event type + head_sha
 ```
 
-ポーリングがタイムアウトした場合はシナリオ失敗として終了する。
+If polling times out, the scenario exits as failed.
 
 ---
 
-## verify.sh — HTTP検証スクリプト
+## verify.sh — HTTP Verification Script
 
-### 目的
+### Purpose
 
-デプロイ先URLにHTTPリクエストを送信し、ステータスコードとレスポンスボディを検証する。CDNキャッシュや非同期反映による一時的な不一致をリトライで吸収する。
+Sends HTTP requests to deploy target URLs and verifies status codes and response bodies. Absorbs temporary inconsistencies caused by CDN caching or asynchronous propagation through retries.
 
-### インターフェース
+### Interface
 
 ```bash
 ./scripts/e2e/verify.sh <url> <expected_status> [options]
 ```
 
-| 引数・オプション | 説明 | デフォルト |
+| Argument / Option | Description | Default |
 |---|---|---|
-| `<url>` | 検証対象のURL | （必須） |
-| `<expected_status>` | 期待するHTTPステータスコード | （必須） |
-| `--contains <text>` | レスポンスボディに含まれるべき文字列（複数指定可） | — |
-| `--require-trailing-slash` | URLパスの末尾スラッシュを強制 | — |
-| `--retries <count>` | リトライ回数 | 10 |
-| `--interval <seconds>` | リトライ間隔（秒） | 3 |
-| `--timeout <seconds>` | curlタイムアウト（秒） | 10 |
+| `<url>` | URL to verify | (required) |
+| `<expected_status>` | Expected HTTP status code | (required) |
+| `--contains <text>` | String(s) that must be present in the response body (multiple allowed) | — |
+| `--require-trailing-slash` | Enforce trailing slash on the URL path | — |
+| `--retries <count>` | Number of retries | 10 |
+| `--interval <seconds>` | Retry interval (seconds) | 3 |
+| `--timeout <seconds>` | curl timeout (seconds) | 10 |
 
-### 処理フロー
+### Processing Flow
 
 ```mermaid
 flowchart TD
-    S[開始] --> TS{末尾スラッシュ<br/>チェック?}
-    TS -->|要求あり & 不足| F1[エラー終了]
-    TS -->|OK / チェックなし| L[リトライループ開始]
-    L --> C[curl でHTTPリクエスト]
-    C --> SC{ステータスコード<br/>一致?}
-    SC -->|不一致| R{リトライ残?}
-    SC -->|一致| BC{--contains<br/>文字列チェック}
-    BC -->|全文字列を含む| OK[成功終了]
-    BC -->|不一致| R
-    R -->|あり| W[interval 秒待機] --> L
-    R -->|なし| F2[タイムアウト<br/>エラー終了]
+    S[Start] --> TS{Trailing slash<br/>check?}
+    TS -->|Required & missing| F1[Error exit]
+    TS -->|OK / No check| L[Start retry loop]
+    L --> C[HTTP request via curl]
+    C --> SC{Status code<br/>match?}
+    SC -->|Mismatch| R{Retries<br/>remaining?}
+    SC -->|Match| BC{--contains<br/>string check}
+    BC -->|All strings present| OK[Success exit]
+    BC -->|Mismatch| R
+    R -->|Yes| W[Wait interval seconds] --> L
+    R -->|No| F2[Timeout<br/>error exit]
 ```
 
-### 設計上のポイント
+### Design Considerations
 
-- **リトライ機構**: Azure Blob Storageの静的Webサイト機能は、Blobアップロード後のHTTP反映に若干のラグがある場合がある。リトライにより一時的な不整合を吸収する
-- **複数 `--contains` 対応**: 1回のリクエストで複数の文字列を検証でき、マーカー文字列とページタイトルの同時確認等が可能
-- **末尾スラッシュ検証**: Azure Blob Storageは `/pr-42` → `/pr-42/` の自動リダイレクトを行わないため、URLの正当性をスクリプトレベルで保証する
+- **Retry mechanism**: Azure Blob Storage's static website feature may have a slight lag in HTTP availability after blob upload. Retries absorb these temporary inconsistencies
+- **Multiple `--contains` support**: Multiple strings can be verified in a single request, enabling simultaneous checks for marker strings and page titles
+- **Trailing slash verification**: Azure Blob Storage does not automatically redirect `/pr-42` to `/pr-42/`, so URL correctness is enforced at the script level
 
 ---
 
-## テスト用静的サイト
+## Test Static Site
 
-e2eリポジトリの `docs/` ディレクトリに最小限のHTMLファイルを配置する。
+Minimal HTML files are placed in the `docs/` directory of the E2E repository.
 
 ```
 docs/
-├── index.html          # メインページ（マーカー挿入対象）
+├── index.html          # Main page (marker insertion target)
 └── sub/
-    └── page.html       # サブディレクトリ配信確認用
+    └── page.html       # For verifying subdirectory delivery
 ```
 
-- `index.html`: E2Eオーケストレーターがマーカー文字列を動的に挿入し、デプロイごとにコンテンツの新鮮さを確認する
-- `sub/page.html`: サブディレクトリ構造がBlob Storage上で正しく配信されることの確認用
+- `index.html`: The E2E orchestrator dynamically inserts marker strings to verify content freshness on each deploy
+- `sub/page.html`: Verifies that subdirectory structures are correctly served on Blob Storage
 
-テスト中に一時的に追加・削除されるファイル:
-- `docs/obsolete.txt`: Stage 2で追加、Stage 3で削除。クリーンデプロイによるファイル削除反映を検証
-- `docs/fresh.txt`: Stage 3で追加。ファイル追加の反映を検証
+Files temporarily added and removed during testing:
+- `docs/obsolete.txt`: Added in Stage 2, removed in Stage 3. Verifies that clean deploy reflects file deletions
+- `docs/fresh.txt`: Added in Stage 3. Verifies that file additions are reflected
 
 ---
 
-## エラーハンドリングと後片付け
+## Error Handling and Cleanup
 
-オーケストレーターは `trap` を使い、正常終了・異常終了を問わず後片付けを実行する。
+The orchestrator uses `trap` to execute cleanup regardless of whether the script exits normally or abnormally.
 
-1. **trapによるクリーンアップ保証**: `trap cleanup EXIT` でスクリプト終了時に必ずクリーンアップ関数を実行する。`set -e` による途中終了でもリソースが残留しない
-2. **冪等なクリーンアップ**: PRが未作成・既にクローズされている場合やブランチが存在しない場合でもエラーにならない
-3. **部分失敗の許容**: クリーンアップ内の個別操作は `|| cleanup_failed=1` でキャッチし、1つの失敗が他の操作を妨げない
-4. **終了コードの分離**: シナリオ失敗とクリーンアップ失敗を区別し、両方失敗した場合はシナリオ失敗の終了コードを優先する
+1. **Guaranteed cleanup via trap**: `trap cleanup EXIT` ensures the cleanup function runs on script exit. Resources are not left behind even on early termination via `set -e`
+2. **Idempotent cleanup**: No errors occur even if the PR has not been created, is already closed, or the branch does not exist
+3. **Tolerance for partial failures**: Individual operations within cleanup are caught with `|| cleanup_failed=1`, so one failure does not prevent other operations
+4. **Separate exit codes**: Scenario failures and cleanup failures are distinguished; when both fail, the scenario failure exit code takes priority

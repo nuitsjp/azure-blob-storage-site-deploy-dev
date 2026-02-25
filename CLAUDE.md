@@ -5,110 +5,110 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Language Policy
 
 - Think in English, interact with the user in Japanese.
-- すべての説明・ドキュメント・コメントは日本語で記述する。
-- 識別子（クラス名、関数名、変数名、ファイル名の一部）は英語を使う。
-- コミットメッセージは日本語でも可。Conventional Commitsスタイル (`feat:`, `docs:`, `fix:` 等) を使う。
+- Write all explanations, documentation, and comments in Japanese.
+- Use English for identifiers (class names, function names, variable names, parts of file names).
+- Commit messages may be in Japanese. Use Conventional Commits style (`feat:`, `docs:`, `fix:`, etc.).
 
 ## Repository Overview
 
-開発用メタリポジトリ。2つの独立したリポジトリをサブモジュールとして束ね、AIコーディングエージェントが横断的に作業できるハブを提供する。
+A development meta-repository. It bundles two independent repositories as submodules and provides a hub for AI coding agents to work across them.
 
-- **`repos/product`** — `azure-blob-storage-site-deploy`: Azure Blob Storageへ静的サイトをデプロイするGitHub Actions Composite Action
-- **`repos/e2e`** — `azure-blob-storage-site-deploy-e2e`: 上記アクションのE2Eテスト
+- **`repos/product`** — `azure-blob-storage-site-deploy`: A GitHub Actions Composite Action for deploying static sites to Azure Blob Storage
+- **`repos/e2e`** — `azure-blob-storage-site-deploy-e2e`: E2E tests for the above action
 
-Git依存方向: `e2e → product`（E2Eがproductアクションを `uses:` で参照）
+Git dependency direction: `e2e → product` (E2E references the product action via `uses:`)
 
 ## Branching Rules
 
-- `repos/product` / `repos/e2e` では **`main` ブランチを直接編集しない**。必ず作業ブランチを作成する。
-- どちらのリポジトリを変更したかを明確にして報告する。
+- **Never edit the `main` branch directly** in `repos/product` / `repos/e2e`. Always create a working branch.
+- Clearly report which repository was changed.
 
 ## Common Commands
 
-タスクランナー `just` を使用する。`just` で全タスク一覧を確認できる。
+Uses the task runner `just`. Run `just` to see the full list of available tasks.
 
 ```bash
-# セットアップ
-just setup              # 開発環境セットアップ（gh/jq, bats-core, doctor）
-just doctor             # 前提条件の診断
+# Setup
+just setup              # Development environment setup (gh/jq, bats-core, doctor)
+just doctor             # Prerequisites diagnostics
 
-# テスト
-just test               # 単体 + フロー + E2E（デフォルト）
-just test-unit          # 単体テストのみ
-just test-flow          # フローテストのみ
-just test-e2e           # E2Eテスト（実Azure / gh / jq 必要）
+# Testing
+just test               # Unit + Flow + E2E (default)
+just test-unit          # Unit tests only
+just test-flow          # Flow tests only
+just test-e2e           # E2E tests (requires real Azure / gh / jq)
 
-# リリース
-just release v1.2.3     # 指定バージョンでリリース
-just release-auto       # パッチバージョン自動インクリメント
+# Release
+just release v1.2.3     # Release with specified version
+just release-auto       # Auto-increment patch version
 
-# サブモジュール・状態確認
-just status             # 各リポジトリの状態確認
-just log                # 各リポジトリのログ確認
+# Submodule / Status
+just status             # Check status of each repository
+just log                # Show logs for each repository
 
-# 作業ブランチ作成
-just branch-product NAME  # repos/product でブランチ作成
-just branch-e2e NAME      # repos/e2e でブランチ作成
+# Create working branches
+just branch-product NAME  # Create branch in repos/product
+just branch-e2e NAME      # Create branch in repos/e2e
 ```
 
 ## Design Documents
 
-設計ドキュメントはメタリポジトリの `docs/` に集約:
+Design documents are consolidated in the `docs/` directory of the meta-repository:
 
-- [`docs/design.md`](docs/design.md) — プロダクト設計（背景・要件・制約・インターフェース）
-- [`docs/architecture.md`](docs/architecture.md) — 実装構成とスクリプト分割
-- [`docs/deploy.md`](docs/deploy.md) — deploy.shの詳細設計
-- [`docs/cleanup.md`](docs/cleanup.md) — cleanup.shの詳細設計
-- [`docs/e2e.md`](docs/e2e.md) — E2Eテストの詳細設計
+- [`docs/design.md`](docs/design.md) — Product design (background, requirements, constraints, interface)
+- [`docs/architecture.md`](docs/architecture.md) — Implementation structure and script decomposition
+- [`docs/deploy.md`](docs/deploy.md) — Detailed design of deploy.sh
+- [`docs/cleanup.md`](docs/cleanup.md) — Detailed design of cleanup.sh
+- [`docs/e2e.md`](docs/e2e.md) — Detailed design of E2E tests
 
 ## Architecture
 
 ### Product (`repos/product`) — Composite Action
 
-実装言語はbash。ビルドステップなしのシェルベースComposite Action。
+Implemented in bash. A shell-based Composite Action with no build step.
 
-ロジックと副作用の分離を基本設計原則とする:
+The fundamental design principle is separation of logic and side effects:
 
-1. **Logic Layer** (`scripts/lib/validate.sh`, `scripts/lib/prefix.sh`) — 純粋関数、外部依存なし
-2. **Effect Layer** (`scripts/lib/azure.sh`) — `az` CLIの薄いラッパー、モックでテスト可能
-3. **Entrypoints** (`scripts/deploy.sh`, `scripts/cleanup.sh`) — Logic + Effectを組み合わせるオーケストレーター、`action.yml` から呼ばれる
+1. **Logic Layer** (`scripts/lib/validate.sh`, `scripts/lib/prefix.sh`) — Pure functions, no external dependencies
+2. **Effect Layer** (`scripts/lib/azure.sh`) — Thin wrapper around `az` CLI, testable with mocks
+3. **Entrypoints** (`scripts/deploy.sh`, `scripts/cleanup.sh`) — Orchestrators that combine Logic + Effect, called from `action.yml`
 
-テスト時は `tests/helpers/mock_azure.sh` で `az` 関数をモックに差し替え、呼び出し引数をログファイルに記録してアサーションする。
+During testing, `tests/helpers/mock_azure.sh` replaces `az` functions with mocks that record call arguments to a log file for assertions.
 
-### E2E (`repos/e2e`) — E2Eテスト用リポジトリ
+### E2E (`repos/e2e`) — E2E Test Repository
 
-Composite Actionの「利用者」として最低限必要なリソースのみ配置:
+Contains only the minimum resources needed as a "consumer" of the Composite Action:
 
-- `.github/workflows/deploy.yml` — push/PRトリガーのデプロイワークフロー
-- `docs/` — テスト用静的サイトコンテンツ
+- `.github/workflows/deploy.yml` — Deploy workflow triggered by push/PR events
+- `docs/` — Static site content for testing
 
-E2Eテストの実行スクリプトはdevリポジトリの `scripts/e2e/` に配置:
+E2E test execution scripts are located in the dev repository's `scripts/e2e/`:
 
-- `scripts/e2e/orchestrator.sh` — ライフサイクル全体のE2Eシナリオ実行
-- `scripts/e2e/lib.sh` — 共有ヘルパー関数
-- `scripts/e2e/verify.sh` — HTTP検証スクリプト（リトライ・コンテンツ検証）
+- `scripts/e2e/orchestrator.sh` — Runs E2E scenarios covering the full lifecycle
+- `scripts/e2e/lib.sh` — Shared helper functions
+- `scripts/e2e/verify.sh` — HTTP verification script (retry and content validation)
 
 ### Test Strategy
 
-| テスト層 | 実行場所 | Azureリソース | 実行タイミング |
+| Test Layer | Location | Azure Resources | Execution Timing |
 |---|---|---|---|
-| 単体テスト | `repos/product/tests/unit/` | 不要 | PR作成・更新時 |
-| フローテスト | `repos/product/tests/flow/`（azモック） | 不要 | PR作成・更新時 |
-| E2Eテスト | `scripts/e2e/`（devリポジトリからローカル実行） | 必要 | 手動 / リリース前 |
+| Unit tests | `repos/product/tests/unit/` | Not required | On PR creation/update |
+| Flow tests | `repos/product/tests/flow/` (az mocked) | Not required | On PR creation/update |
+| E2E tests | `scripts/e2e/` (run locally from dev repository) | Required | Manual / Pre-release |
 
-CIは `repos/product/.github/workflows/test-unit.yml` でPRごとに単体テスト・フローテストを実行。
+CI runs unit tests and flow tests on each PR via `repos/product/.github/workflows/test-unit.yml`.
 
 ### Key Design Decisions
 
-- **PR番号ベースのプレフィックス** (`pr-<number>`): ブランチ名ではなくPR番号を使用。日本語文字のエンコード問題、スラッシュのディレクトリ区切り解釈、永続ブランチとの名前衝突を回避。
-- **ファイル同期戦略**: プレフィックスディレクトリを全削除してからアップロード（古いファイルの残留を防止）
-- **OIDC認証**: AzureへはFederated Credentialsで接続（シークレット不要）
-- **Composite Action over Reusable Workflow**: 呼び出し側ジョブ内のステップとして実行（別ジョブ起動のオーバーヘッドなし）
-- **URL末尾スラッシュ**: Azure Blob Storageは `/pr-42` → `/pr-42/` の自動リダイレクトをしないため、URLには必ず末尾 `/` を付与
+- **PR number-based prefix** (`pr-<number>`): Uses PR numbers instead of branch names. Avoids issues with Japanese character encoding, slash interpretation as directory separators, and name collisions with persistent branches.
+- **File sync strategy**: Fully deletes the prefix directory before uploading (prevents stale files from remaining)
+- **OIDC authentication**: Connects to Azure via Federated Credentials (no secrets required)
+- **Composite Action over Reusable Workflow**: Runs as a step within the caller's job (no overhead of spinning up a separate job)
+- **Trailing slash in URLs**: Azure Blob Storage does not auto-redirect `/pr-42` to `/pr-42/`, so URLs must always include a trailing `/`
 
 ## Coding Conventions
 
-- ファイル名: 小文字、テストは `test_*.bats`
-- Bashスクリプト: 小さな関数に分割、副作用はラッパーに隔離（`scripts/lib/azure.sh`）
-- テスト優先順位: ユニットテスト（純粋関数）→ フローテスト（モック）→ E2E（Azure実環境、外部リポジトリ）
-- PRステージングプレフィックス: `pr-<number>`
+- File names: lowercase, tests follow `test_*.bats`
+- Bash scripts: decompose into small functions, isolate side effects in wrappers (`scripts/lib/azure.sh`)
+- Test priority: Unit tests (pure functions) → Flow tests (mocked) → E2E (real Azure environment, external repository)
+- PR staging prefix: `pr-<number>`

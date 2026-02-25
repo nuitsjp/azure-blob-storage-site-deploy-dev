@@ -1,115 +1,117 @@
+> [日本語版](architecture.ja.md)
+
 # architecture
 
-## 本書の位置づけ
+## Document Map
 
-- [`design.md`](design.md): プロダクト設計（背景・要件・制約・インターフェース）
-- `architecture.md`（本書）: 実装構成とスクリプト分割
-- [`deploy.md`](deploy.md) / [`cleanup.md`](cleanup.md): 各スクリプトの詳細設計
-- [`e2e.md`](e2e.md): E2Eテストの詳細設計
+- [`design.md`](design.md): Product design (background, requirements, constraints, interface)
+- `architecture.md` (this document): Implementation structure and script organization
+- [`deploy.md`](deploy.md) / [`cleanup.md`](cleanup.md): Detailed design for each script
+- [`e2e.md`](e2e.md): Detailed design for E2E tests
 
-## 実装技術
+## Implementation Technology
 
 ### Composite Action
 
-本actionはComposite Actionとして実装する。Reusable Workflow（`workflow_call`）ではなくComposite Actionを選択する理由は以下のとおり。
+This action is implemented as a Composite Action. The reasons for choosing Composite Action over Reusable Workflow (`workflow_call`) are as follows.
 
-- 呼び出し側のジョブ内でステップとして実行されるため、別ジョブ起動のオーバーヘッドがない
-- ステップ単位でロジックを分離でき、テスタビリティが高い
+- It runs as a step within the caller's job, eliminating the overhead of spawning a separate job
+- Logic can be separated at the step level, resulting in high testability
 
 ### bash
 
-内部ロジックはbashで実装する。
+Internal logic is implemented in bash.
 
-- GitHub Actionsランナー（`ubuntu-latest`）に標準搭載で追加インストールが不要
-- `az cli`もランナーにプリインストール済みであり、環境構築手順なしでAzure操作が可能
-- Python・Node.js等のランタイムに依存しないため、実行が軽快
+- Pre-installed on GitHub Actions runners (`ubuntu-latest`), requiring no additional installation
+- `az cli` is also pre-installed on runners, enabling Azure operations without any environment setup
+- No dependency on runtimes such as Python or Node.js, resulting in lightweight execution
 
 ---
 
-## ディレクトリ構成
+## Directory Structure
 
 ```
 azure-blob-storage-site-deploy/
-├── action.yml                      # Composite Action定義
+├── action.yml                      # Composite Action definition
 ├── scripts/
 │   ├── lib/
-│   │   ├── validate.sh             # 入力バリデーション関数群
-│   │   ├── prefix.sh               # プレフィックス生成・URL組み立て
-│   │   └── azure.sh                # az cli呼び出しラッパー（副作用層）
-│   ├── deploy.sh                   # deployアクションのエントリーポイント
-│   └── cleanup.sh                  # cleanupアクションのエントリーポイント
+│   │   ├── validate.sh             # Input validation functions
+│   │   ├── prefix.sh               # Prefix generation and URL construction
+│   │   └── azure.sh                # az cli call wrapper (side-effect layer)
+│   ├── deploy.sh                   # Entry point for the deploy action
+│   └── cleanup.sh                  # Entry point for the cleanup action
 ├── tests/
 │   ├── unit/
-│   │   ├── test_validate.bats      # バリデーションのテスト
-│   │   └── test_prefix.bats        # プレフィックス生成のテスト
+│   │   ├── test_validate.bats      # Validation tests
+│   │   └── test_prefix.bats        # Prefix generation tests
 │   ├── flow/
-│   │   ├── test_deploy.bats        # deployフローのテスト（azモック）
-│   │   └── test_cleanup.bats       # cleanupフローのテスト（azモック）
+│   │   ├── test_deploy.bats        # Deploy flow tests (az mocked)
+│   │   └── test_cleanup.bats       # Cleanup flow tests (az mocked)
 │   └── helpers/
-│       └── mock_azure.sh           # az cliのモック（単体・フローテスト用）
+│       └── mock_azure.sh           # az cli mock (for unit and flow tests)
 ├── .github/
 │   └── workflows/
-│       └── test-unit.yml           # 単体テスト・フローテスト（PRごとに実行）
+│       └── test-unit.yml           # Unit and flow tests (run per PR)
 └── README.md
 ```
 
-### scripts/ の設計原則：ロジックと副作用の分離
+### scripts/ Design Principle: Separation of Logic and Side Effects
 
-テスタビリティを確保するため、内部スクリプトを以下の2層に分離する。
+Internal scripts are separated into two layers to ensure testability.
 
-**ロジック層（`lib/validate.sh`, `lib/prefix.sh`）**: 外部コマンドに依存しない純粋な関数群。入力バリデーション、プレフィックス決定、URL組み立て等を担う。bats-coreで高速に単体テスト可能。
+**Logic layer (`lib/validate.sh`, `lib/prefix.sh`)**: Pure functions with no external command dependencies. Responsible for input validation, prefix resolution, URL construction, etc. Can be unit tested rapidly with bats-core.
 
-**副作用層（`lib/azure.sh`）**: `az storage blob upload-batch` / `delete-batch` 等のaz cli呼び出しを薄い関数としてラップする。テスト時はモック版（`tests/helpers/mock_azure.sh`）に差し替えることで、Azureへの実接続なしにdeploy.sh / cleanup.shのフロー全体をテストできる。
+**Side-effect layer (`lib/azure.sh`)**: Thin function wrappers around az cli calls such as `az storage blob upload-batch` / `delete-batch`. During testing, these are replaced with mock versions (`tests/helpers/mock_azure.sh`), enabling testing of the entire deploy.sh / cleanup.sh flow without actual Azure connections.
 
-**エントリーポイント（`deploy.sh`, `cleanup.sh`）**: `action.yml`から呼ばれるスクリプト。ロジック層と副作用層の関数を組み合わせて処理を実行する。
+**Entry points (`deploy.sh`, `cleanup.sh`)**: Scripts called from `action.yml`. They combine functions from the logic layer and side-effect layer to execute the processing.
 
-### lib/ の関数一覧
+### lib/ Function List
 
 ```
 validate.sh
-├── validate_storage_account()      # アカウント名の形式チェック
-├── validate_action()               # "deploy" or "cleanup" の検証
-├── validate_source_dir()           # ディレクトリ存在チェック（deploy時）
-├── validate_branch_name()          # ブランチ名の形式チェック
-├── validate_pull_request_number()  # PR番号の正の整数チェック
-├── validate_prefix_inputs()        # branch_name / pull_request_number の入力検証
-└── validate_site_name()            # サイト識別名の形式チェック（小文字英数字+ハイフン、63文字以内）
+├── validate_storage_account()      # Validate account name format
+├── validate_action()               # Validate "deploy" or "cleanup"
+├── validate_source_dir()           # Check directory existence (for deploy)
+├── validate_branch_name()          # Validate branch name format
+├── validate_pull_request_number()  # Validate PR number is a positive integer
+├── validate_prefix_inputs()        # Validate branch_name / pull_request_number inputs
+└── validate_site_name()            # Validate site identifier format (lowercase alphanumeric + hyphens, max 63 chars)
 
 prefix.sh
-├── build_blob_prefix()             # site_name + target_prefix からBlobプレフィックスを生成（<site_name>/<target_prefix>）
-├── resolve_target_prefix()         # branch_name + pull_request_number からプレフィックスを解決
-├── build_site_url()                # エンドポイント+プレフィックスからURL生成（末尾/保証）
-└── build_blob_pattern()            # delete-batch用のパターン文字列生成
+├── build_blob_prefix()             # Generate Blob prefix from site_name + target_prefix (<site_name>/<target_prefix>)
+├── resolve_target_prefix()         # Resolve prefix from branch_name + pull_request_number
+├── build_site_url()                # Generate URL from endpoint + prefix (ensures trailing /)
+└── build_blob_pattern()            # Generate pattern string for delete-batch
 ```
 
-**deploy.sh / cleanup.sh**: `INPUT_SITE_NAME`の環境変数を読み取り、`build_blob_prefix()`でsite_nameとtarget_prefixを結合してから既存関数に渡す。azure.shは結合済みのパスを不透明な文字列として扱う。
+**deploy.sh / cleanup.sh**: Read the `INPUT_SITE_NAME` environment variable, concatenate site_name and target_prefix via `build_blob_prefix()`, then pass the result to existing functions. azure.sh treats the concatenated path as an opaque string.
 
 ---
 
-## テスト方針
+## Testing Strategy
 
-bashスクリプトのテストには**bats-core**（Bash Automated Testing System）を使用する。
+**bats-core** (Bash Automated Testing System) is used for testing bash scripts.
 
-| テスト層 | 対象 | Azureリソース | 実行タイミング |
+| Test Layer | Target | Azure Resources | Execution Timing |
 |---|---|---|---|
-| 単体テスト | lib/の関数群 | 不要 | PR作成・更新時（CI自動） |
-| フローテスト | deploy.sh / cleanup.sh（azモック） | 不要 | PR作成・更新時（CI自動） |
-| E2Eテスト | ライフサイクル全体 | 必要 | 手動 / リリース前 |
+| Unit tests | lib/ functions | Not required | On PR creation/update (CI automatic) |
+| Flow tests | deploy.sh / cleanup.sh (az mocked) | Not required | On PR creation/update (CI automatic) |
+| E2E tests | Entire lifecycle | Required | Manual / Pre-release |
 
-**単体テスト**: `lib/validate.sh`と`lib/prefix.sh`の各関数を個別にテストする。外部コマンドへの依存がないため、高速に実行できる。
+**Unit tests**: Test each function in `lib/validate.sh` and `lib/prefix.sh` individually. No external command dependencies, enabling fast execution.
 
-**フローテスト**: `deploy.sh`と`cleanup.sh`のフロー全体をテストする。`tests/helpers/mock_azure.sh`でaz cli関数をモックに差し替え、実行順序・引数・エラー時の中断を検証する。
+**Flow tests**: Test the entire flow of `deploy.sh` and `cleanup.sh`. Replace az cli functions with mocks via `tests/helpers/mock_azure.sh`, verifying execution order, arguments, and abort-on-error behavior.
 
-**E2Eテスト**: テスト用リポジトリを使い、実Azure環境でライフサイクル全体を検証する。詳細は[`e2e.md`](e2e.md)を参照。
+**E2E tests**: Use a test repository to verify the entire lifecycle in a real Azure environment. See [`e2e.md`](e2e.md) for details.
 
-テストの実行方法は[README.md](../README.md)を参照。
+For test execution instructions, see [README.md](../README.md).
 
-### devメタリポジトリのテスト実行レイヤー（共通ランナー + 各アダプタ）
+### Dev Meta-Repository Test Execution Layer (Shared Runner + Adapters)
 
-開発用メタリポジトリ（`azure-blob-storage-site-deploy-dev`）では、テスト実行の入口を `scripts/test.sh` に統一する。
+In the dev meta-repository (`azure-blob-storage-site-deploy-dev`), the test execution entry point is unified under `scripts/test.sh`.
 
-- `unit` / `flow`: productリポジトリのBatsテストを呼び出す
-- `e2e`: `scripts/e2e/orchestrator.sh` を呼び出す（前提条件チェックと実行サマリーは共通ランナー側で提供）
-- `all`: `unit + flow + e2e` を順次実行（デフォルト）
+- `unit` / `flow`: Invoke Bats tests in the product repository
+- `e2e`: Invoke `scripts/e2e/orchestrator.sh` (prerequisite checks and execution summary are provided by the shared runner)
+- `all`: Execute `unit + flow + e2e` sequentially (default)
 
-この構成により、E2Eの内部実装（ローカル実行オーケストレーター）を維持したまま、開発者から見たCLI・前提条件エラー・実行サマリーの形式を一貫させる。
+This architecture maintains the E2E internal implementation (local execution orchestrator) while providing developers with a consistent CLI, prerequisite error handling, and execution summary format.

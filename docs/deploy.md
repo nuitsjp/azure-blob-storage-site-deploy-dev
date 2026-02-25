@@ -1,31 +1,33 @@
-# deploy.sh設計
+> [日本語版](deploy.ja.md)
 
-## 概要
+# deploy.sh Design
 
-`scripts/deploy.sh` は `action.yml` から `action=deploy` 時に呼び出されるエントリーポイントスクリプト。対象プレフィックス配下の既存ファイルを全削除した後、ソースディレクトリの内容をアップロードし、配置先URLを標準出力に返す。
+## Overview
 
-## 入力
+`scripts/deploy.sh` is the entrypoint script invoked from `action.yml` when `action=deploy`. It deletes all existing files under the target prefix, uploads the contents of the source directory, and outputs the deployment URL to stdout.
 
-環境変数または関数引数で受け取る。環境変数は `action.yml` が `inputs` からマッピングする。
+## Inputs
 
-| 優先順位 | 関数引数 | 環境変数 | 説明 |
-|----------|----------|----------|------|
-| 1 | `$1` | `INPUT_STORAGE_ACCOUNT` | Azure Storageアカウント名 |
-| 2 | `$2` | `INPUT_SOURCE_DIR` | アップロード対象ディレクトリ |
-| 3 | `$3` | `INPUT_BRANCH_NAME` | ブランチ名 |
-| 4 | `$4` | `INPUT_PULL_REQUEST_NUMBER` | PR番号 |
-| 5 | `$5` | `INPUT_ACTION` | 実行種別（デフォルト: `deploy`） |
-| 6 | `$6` | `INPUT_SITE_NAME` | サイト識別名（省略時はGITHUB_REPOSITORYから導出） |
+Received via environment variables or function arguments. Environment variables are mapped from `inputs` by `action.yml`.
 
-## 出力
+| Priority | Function Arg | Environment Variable | Description |
+|----------|-------------|---------------------|-------------|
+| 1 | `$1` | `INPUT_STORAGE_ACCOUNT` | Azure Storage account name |
+| 2 | `$2` | `INPUT_SOURCE_DIR` | Directory to upload |
+| 3 | `$3` | `INPUT_BRANCH_NAME` | Branch name |
+| 4 | `$4` | `INPUT_PULL_REQUEST_NUMBER` | PR number |
+| 5 | `$5` | `INPUT_ACTION` | Action type (default: `deploy`) |
+| 6 | `$6` | `INPUT_SITE_NAME` | Site identifier (derived from GITHUB_REPOSITORY if omitted) |
 
-- 標準出力: 配置先URL（末尾スラッシュ付き）
-  - 例: `https://examplestorage.<zone>.web.core.windows.net/pr-42/`
-- `action.yml` が標準出力の最終行を `site_url` として `GITHUB_OUTPUT` に書き込む
+## Outputs
 
-## 処理フロー
+- stdout: Deployment URL (with trailing slash)
+  - Example: `https://examplestorage.<zone>.web.core.windows.net/pr-42/`
+- `action.yml` writes the last line of stdout to `GITHUB_OUTPUT` as `site_url`
 
-### シーケンス図
+## Processing Flow
+
+### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
@@ -36,7 +38,7 @@ sequenceDiagram
     participant AZ as azure.sh
     participant Blob as Azure Blob Storage
 
-    AY->>D: 環境変数経由で呼び出し
+    AY->>D: Invoke via environment variables
     activate D
 
     Note over D: deploy_load_libs()
@@ -47,7 +49,7 @@ sequenceDiagram
     Note over D: deploy_main()
 
     rect rgb(240, 240, 255)
-        Note over D,V: 1. バリデーション
+        Note over D,V: 1. Validation
         D->>V: validate_action("deploy")
         V-->>D: ok
         D->>V: validate_storage_account(storage_account)
@@ -59,11 +61,11 @@ sequenceDiagram
     end
 
     rect rgb(240, 255, 240)
-        Note over D,P: 2. プレフィックス解決・URL組み立て
+        Note over D,P: 2. Prefix Resolution & URL Construction
         D->>P: resolve_target_prefix(branch_name, pull_request_number)
-        P-->>D: target_prefix（例: "pr-42"）
+        P-->>D: target_prefix (e.g., "pr-42")
         D->>P: build_blob_pattern(target_prefix)
-        P-->>D: blob_pattern（例: "pr-42/*"）
+        P-->>D: blob_pattern (e.g., "pr-42/*")
         D->>AZ: azure_get_static_website_endpoint(storage_account)
         AZ->>Blob: az storage account show --query primaryEndpoints.web
         Blob-->>AZ: endpoint
@@ -73,7 +75,7 @@ sequenceDiagram
     end
 
     rect rgb(255, 240, 240)
-        Note over D,Blob: 3. Azure操作（副作用）
+        Note over D,Blob: 3. Azure Operations (Side Effects)
         D->>AZ: azure_delete_prefix(storage_account, blob_pattern)
         AZ->>Blob: az storage blob delete-batch --pattern "pr-42/*"
         Blob-->>AZ: ok
@@ -84,52 +86,52 @@ sequenceDiagram
         AZ-->>D: ok
     end
 
-    D-->>AY: site_url を標準出力
+    D-->>AY: Output site_url to stdout
     deactivate D
 
-    Note over AY: site_url を GITHUB_OUTPUT に書き込み
+    Note over AY: Write site_url to GITHUB_OUTPUT
 ```
 
-### 処理ステップの詳細
+### Processing Steps in Detail
 
-#### 1. バリデーション（validate.sh）
+#### 1. Validation (validate.sh)
 
-すべての入力値を検証し、不正な場合は即座にエラーで終了する。Azure操作の前にフェイルファストすることで、不要なAPI呼び出しを防ぐ。
+All input values are validated, and invalid values cause an immediate error exit. By failing fast before Azure operations, unnecessary API calls are prevented.
 
-| 関数 | 検証内容 |
-|------|----------|
-| `validate_action` | `deploy` または `cleanup` であること |
-| `validate_storage_account` | 3〜24文字の小文字英数字であること |
-| `validate_source_dir` | `action=deploy` 時に存在するディレクトリであること |
-| `validate_prefix_inputs` | `branch_name` または `pull_request_number` のいずれかが有効であること |
+| Function | Validation |
+|----------|-----------|
+| `validate_action` | Must be `deploy` or `cleanup` |
+| `validate_storage_account` | Must be 3-24 lowercase alphanumeric characters |
+| `validate_source_dir` | Must be an existing directory when `action=deploy` |
+| `validate_prefix_inputs` | Either `branch_name` or `pull_request_number` must be valid |
 
-#### 2. プレフィックス解決・URL組み立て（prefix.sh）
+#### 2. Prefix Resolution & URL Construction (prefix.sh)
 
-`branch_name` と `pull_request_number` からデプロイ先プレフィックスを決定し、関連するパターンとURLを組み立てる。
+Determines the deployment prefix from `branch_name` and `pull_request_number`, and constructs the related pattern and URL.
 
-- `resolve_target_prefix`: `pull_request_number` 優先で `pr-<番号>` を生成、なければ `branch_name` をそのまま使用
-- `build_blob_pattern`: 削除対象のglobパターン生成（例: `pr-42/*`）
-- `build_site_url`: エンドポイント＋プレフィックスから配置先URL生成（末尾スラッシュ保証）
+- `resolve_target_prefix`: Generates `pr-<number>` with priority on `pull_request_number`; falls back to `branch_name` as-is
+- `build_blob_pattern`: Generates the glob pattern for deletion targets (e.g., `pr-42/*`)
+- `build_site_url`: Generates the deployment URL from endpoint + prefix (guarantees trailing slash)
 
-#### 3. Azure操作（azure.sh）
+#### 3. Azure Operations (azure.sh)
 
-既存ファイル削除→新規アップロードの順で実行する「クリーンデプロイ」方式。
+A "clean deploy" approach that deletes existing files first, then uploads new ones.
 
-1. **`azure_delete_prefix`**: `az storage blob delete-batch` で対象プレフィックス配下を全削除
-2. **`azure_upload_dir`**: `az storage blob upload-batch` でソースディレクトリの内容をアップロード
+1. **`azure_delete_prefix`**: Deletes all blobs under the target prefix using `az storage blob delete-batch`
+2. **`azure_upload_dir`**: Uploads the source directory contents using `az storage blob upload-batch`
 
-この順序により、ファイル名変更や削除が確実にBlob側に反映される。
+This ordering ensures that file renames and deletions are reliably reflected on the Blob side.
 
-## エラーハンドリング
+## Error Handling
 
-- 各ステップで `|| return 1` によりエラーを呼び出し元に伝播する
-- スクリプト直接実行時は `set -euo pipefail` で未定義変数参照やパイプエラーも即座に終了
-- バリデーションエラーはAzure操作の前に検出されるため、不完全な状態のデプロイは発生しない
+- Each step propagates errors to the caller via `|| return 1`
+- When the script is executed directly, `set -euo pipefail` causes immediate exit on undefined variable references or pipe errors
+- Validation errors are detected before Azure operations, so incomplete deployments cannot occur
 
-## テスト方式
+## Testing Approach
 
-フローテスト（`tests/flow/test_deploy.bats`）では `tests/helpers/mock_azure.sh` で `az` コマンドをモック化し、以下を検証する。
+Flow tests (`tests/flow/test_deploy.bats`) mock the `az` command using `tests/helpers/mock_azure.sh` and verify the following:
 
-- delete-batch → upload-batchの実行順序
-- 各コマンドに渡される引数（アカウント名、パターン、ソースディレクトリ、プレフィックス）
-- バリデーションエラー時にAzure操作が呼ばれないこと
+- Execution order of delete-batch followed by upload-batch
+- Arguments passed to each command (account name, pattern, source directory, prefix)
+- Azure operations are not called when validation errors occur
