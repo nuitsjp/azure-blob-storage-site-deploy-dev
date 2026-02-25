@@ -15,12 +15,12 @@
 | 3 | `$3` | `INPUT_BRANCH_NAME` | ブランチ名 |
 | 4 | `$4` | `INPUT_PULL_REQUEST_NUMBER` | PR番号 |
 | 5 | `$5` | `INPUT_ACTION` | 実行種別（デフォルト: `deploy`） |
-| 6 | `$6` | `INPUT_STATIC_WEBSITE_ENDPOINT` | カスタムエンドポイントURL |
+| 6 | `$6` | `INPUT_SITE_NAME` | サイト識別名（省略時は GITHUB_REPOSITORY から導出） |
 
 ## 出力
 
 - 標準出力: 配置先URL（末尾スラッシュ付き）
-  - 例: `https://examplestorage.z22.web.core.windows.net/pr-42/`
+  - 例: `https://examplestorage.<zone>.web.core.windows.net/pr-42/`
 - `action.yml` が標準出力の最終行を `site_url` として `GITHUB_OUTPUT` に書き込む
 
 ## 処理フロー
@@ -64,11 +64,11 @@ sequenceDiagram
         P-->>D: target_prefix（例: "pr-42"）
         D->>P: build_blob_pattern(target_prefix)
         P-->>D: blob_pattern（例: "pr-42/*"）
-        alt static_website_endpoint が指定されている
-            D->>P: build_site_url_from_endpoint(endpoint, target_prefix)
-        else 未指定
-            D->>P: build_site_url(storage_account, target_prefix)
-        end
+        D->>AZ: azure_get_static_website_endpoint(storage_account)
+        AZ->>Blob: az storage account show --query primaryEndpoints.web
+        Blob-->>AZ: endpoint
+        AZ-->>D: endpoint
+        D->>P: build_site_url(endpoint, blob_prefix)
         P-->>D: site_url
     end
 
@@ -109,7 +109,7 @@ sequenceDiagram
 
 - `resolve_target_prefix`: `pull_request_number` 優先で `pr-<番号>` を生成、なければ `branch_name` をそのまま使用
 - `build_blob_pattern`: 削除対象のglobパターン生成（例: `pr-42/*`）
-- `build_site_url` / `build_site_url_from_endpoint`: 配置先URL生成（末尾スラッシュ保証）
+- `build_site_url`: エンドポイント＋プレフィックスから配置先URL生成（末尾スラッシュ保証）
 
 #### 3. Azure操作（azure.sh）
 
@@ -133,4 +133,3 @@ sequenceDiagram
 - delete-batch → upload-batch の実行順序
 - 各コマンドに渡される引数（アカウント名、パターン、ソースディレクトリ、プレフィックス）
 - バリデーションエラー時にAzure操作が呼ばれないこと
-- `static_website_endpoint` 指定時の出力URL

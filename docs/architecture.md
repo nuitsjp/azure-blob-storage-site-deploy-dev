@@ -78,8 +78,7 @@ validate.sh
 prefix.sh
 ├── build_blob_prefix()             # site_name + target_prefix からBlobプレフィックスを生成（<site_name>/<target_prefix>）
 ├── resolve_target_prefix()         # branch_name + pull_request_number からプレフィックスを解決
-├── build_site_url()                # アカウント名+プレフィックスからURL生成（末尾/保証）
-├── build_site_url_from_endpoint()  # エンドポイント+プレフィックスからURL生成（末尾/保証）
+├── build_site_url()                # エンドポイント+プレフィックスからURL生成（末尾/保証）
 └── build_blob_pattern()            # delete-batch用のパターン文字列生成
 ```
 
