@@ -9,7 +9,7 @@ readonly DEFAULT_TIMEOUT=10
 usage() {
   cat <<'EOF'
 使い方:
-  e2e/verify.sh <url> <expected_status> [options]
+  scripts/e2e/verify.sh <url> <expected_status> [options]
 
 options:
   --contains <text>               レスポンスボディに含まれるべき文字列（複数指定可）

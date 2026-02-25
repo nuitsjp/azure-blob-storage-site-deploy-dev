@@ -1,4 +1,4 @@
-# deploy.sh 設計
+# deploy.sh設計
 
 ## 概要
 
@@ -15,7 +15,7 @@
 | 3 | `$3` | `INPUT_BRANCH_NAME` | ブランチ名 |
 | 4 | `$4` | `INPUT_PULL_REQUEST_NUMBER` | PR番号 |
 | 5 | `$5` | `INPUT_ACTION` | 実行種別（デフォルト: `deploy`） |
-| 6 | `$6` | `INPUT_SITE_NAME` | サイト識別名（省略時は GITHUB_REPOSITORY から導出） |
+| 6 | `$6` | `INPUT_SITE_NAME` | サイト識別名（省略時はGITHUB_REPOSITORYから導出） |
 
 ## 出力
 
@@ -130,6 +130,6 @@ sequenceDiagram
 
 フローテスト（`tests/flow/test_deploy.bats`）では `tests/helpers/mock_azure.sh` で `az` コマンドをモック化し、以下を検証する。
 
-- delete-batch → upload-batch の実行順序
+- delete-batch → upload-batchの実行順序
 - 各コマンドに渡される引数（アカウント名、パターン、ソースディレクトリ、プレフィックス）
 - バリデーションエラー時にAzure操作が呼ばれないこと

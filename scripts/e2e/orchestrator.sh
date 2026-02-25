@@ -7,12 +7,13 @@
 #   - jq がインストール済み
 #
 # 使い方:
-#   ./e2e/orchestrator.sh
+#   推奨: ./scripts/test.sh e2e
+#   ./scripts/e2e/orchestrator.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 E2E_REPO_DIR="${REPO_ROOT}/repos/e2e"
 
 readonly AZURE_STORAGE_ACCOUNT="rgazstoragesitedeploy"

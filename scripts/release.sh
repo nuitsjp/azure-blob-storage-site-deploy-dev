@@ -9,16 +9,17 @@
 #   - git submodule update --init --recursive 済み
 #
 # 使い方:
-#   ./release.sh [バージョン]
+#   ./scripts/release.sh [バージョン]
 #
 # 例:
-#   ./release.sh v1.2.3   — 指定バージョンでリリース
-#   ./release.sh          — 最新タグからパッチバージョンを自動インクリメント
+#   ./scripts/release.sh v1.2.3   — 指定バージョンでリリース
+#   ./scripts/release.sh          — 最新タグからパッチバージョンを自動インクリメント
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRODUCT_DIR="${SCRIPT_DIR}/repos/product"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PRODUCT_DIR="${REPO_ROOT}/repos/product"
 
 # --- ヘルパー関数 ---
 

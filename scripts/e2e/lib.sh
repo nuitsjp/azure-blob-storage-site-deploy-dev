@@ -1,5 +1,5 @@
-# e2e/lib.sh — E2Eオーケストレーター共有ヘルパー関数
-# 使い方: source ./e2e/lib.sh
+# scripts/e2e/lib.sh — E2Eオーケストレーター共有ヘルパー関数
+# 使い方: source ./scripts/e2e/lib.sh
 # 注意: set -euo pipefail は呼び出し元が設定する
 
 log() {

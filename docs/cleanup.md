@@ -1,4 +1,4 @@
-# cleanup.sh 設計
+# cleanup.sh設計
 
 ## 概要
 
@@ -71,7 +71,7 @@ sequenceDiagram
     deactivate C
 ```
 
-### deploy.sh との比較
+### deploy.shとの比較
 
 ```mermaid
 flowchart LR
@@ -152,7 +152,7 @@ cleanup:
 
 フローテスト（`tests/flow/test_cleanup.bats`）では `tests/helpers/mock_azure.sh` で `az` コマンドをモック化し、以下を検証する。
 
-- `pull_request_number` 指定時に `pr-<number>` パターンで delete-batch が実行されること
-- `branch_name` 指定時にブランチ名パターンで delete-batch が実行されること
-- delete-batch のみが1回だけ呼ばれること（upload-batch は呼ばれない）
+- `pull_request_number` 指定時に `pr-<number>` パターンでdelete-batchが実行されること
+- `branch_name` 指定時にブランチ名パターンでdelete-batchが実行されること
+- delete-batchのみが1回だけ呼ばれること（upload-batchは呼ばれない）
 - バリデーションエラー時にAzure操作が呼ばれないこと

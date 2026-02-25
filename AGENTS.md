@@ -32,23 +32,30 @@
 
 ## よく使うコマンド
 
+タスクランナー `just` を使用する。`just` で全タスク一覧を確認できる。
+
 ```bash
-git submodule update --init --recursive
-git submodule status --recursive
-git -C repos/product status
-git -C repos/e2e status
+# セットアップ
+just setup              # 開発環境セットアップ（gh/jq, bats-core, doctor）
+just doctor             # 前提条件の診断
 
-# テスト実行
-./test.sh          # 単体テスト + フローテスト
-./test.sh unit     # 単体テストのみ
-./test.sh flow     # フローテストのみ
-
-# E2Eテスト（Azure環境必要）
-./e2e/orchestrator.sh
+# テスト
+just test               # 単体 + フロー + E2E（デフォルト）
+just test-unit          # 単体テストのみ
+just test-flow          # フローテストのみ
+just test-e2e           # E2Eテスト（実Azure / gh / jq 必要）
 
 # リリース
-./release.sh v1.2.3   # 指定バージョンでリリース
-./release.sh          # パッチバージョンを自動インクリメント
+just release v1.2.3     # 指定バージョンでリリース
+just release-auto       # パッチバージョン自動インクリメント
+
+# 状態確認
+just status             # 各リポジトリの状態確認
+just log                # 各リポジトリのログ確認
+
+# 作業ブランチ作成
+just branch-product NAME  # repos/product でブランチ作成
+just branch-e2e NAME      # repos/e2e でブランチ作成
 ```
 
 ## テストガイドライン
@@ -60,6 +67,6 @@ git -C repos/e2e status
 ## コミット・PRガイドライン
 
 - Conventional Commitスタイル: `feat: ...`, `docs: ...`, `fix: ...`。日本語コミットメッセージも可。
-- PR本文には目的、変更ファイル/変更範囲、実施した検証（コマンドと結果、例: `34件 pass`）、影響範囲を含める。
+- PR本文には目的、変更ファイル/変更範囲、実施した検証（コマンドと結果、例: `34件pass`）、影響範囲を含める。
 - 子IssueはPR作成・レビュー中の段階ではCloseしない。原則としてPRマージ後にCloseし、親Issueのチェックリストも同時に更新する。
 - クロスリポジトリの影響がある場合は明示的に記載する。

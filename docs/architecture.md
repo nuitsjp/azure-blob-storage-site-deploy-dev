@@ -103,3 +103,13 @@ bashスクリプトのテストには**bats-core**（Bash Automated Testing Syst
 **E2Eテスト**: テスト用リポジトリを使い、実Azure環境でライフサイクル全体を検証する。詳細は[`e2e.md`](e2e.md)を参照。
 
 テストの実行方法は[README.md](../README.md)を参照。
+
+### devメタリポジトリのテスト実行レイヤー（共通ランナー + 各アダプタ）
+
+開発用メタリポジトリ（`azure-blob-storage-site-deploy-dev`）では、テスト実行の入口を `scripts/test.sh` に統一する。
+
+- `unit` / `flow`: productリポジトリのBatsテストを呼び出す
+- `e2e`: `scripts/e2e/orchestrator.sh` を呼び出す（前提条件チェックと実行サマリーは共通ランナー側で提供）
+- `all`: `unit + flow + e2e` を順次実行（デフォルト）
+
+この構成により、E2Eの内部実装（ローカル実行オーケストレーター）を維持したまま、開発者から見たCLI・前提条件エラー・実行サマリーの形式を一貫させる。
