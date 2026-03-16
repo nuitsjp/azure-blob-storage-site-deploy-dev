@@ -118,6 +118,8 @@ cleanup() {
 
 trap cleanup EXIT
 
+# GitHub Release を作成し、後片付け用の Release ID / タグを記録する。
+# 引数: tag_name target_commitish release_name release_body
 create_release() {
   local tag_name="$1"
   local target_commitish="$2"
@@ -139,6 +141,27 @@ create_release() {
 
   RELEASE_TAGS+=("$tag_name")
   RELEASE_IDS+=("$release_id")
+}
+
+# release-latest 検証用の静的コンテンツを生成する。
+# docs/index.html と docs/release.txt を更新する。
+write_release_content() {
+  local marker="$1"
+  local release_text="$2"
+
+  cat > docs/index.html <<EOF
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>${marker}</title>
+</head>
+<body>
+  <h1>${marker}</h1>
+</body>
+</html>
+EOF
+  printf '%s\n' "$release_text" > docs/release.txt
 }
 
 # --- Stage 1: Main Push ---
@@ -312,20 +335,7 @@ log ""
 log "=== Stage 5: latest release 作成 ==="
 
 release_marker="RELEASE-1-${RUN_TAG}"
-cat > docs/index.html <<EOF
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <title>${release_marker}</title>
-</head>
-<body>
-  <h1>${release_marker}</h1>
-  <p>stage=release-1</p>
-</body>
-</html>
-EOF
-printf '%s\n' "release-1-${RUN_TAG}" > docs/release.txt
+write_release_content "$release_marker" "release-1-${RUN_TAG}"
 git add docs/index.html docs/release.txt
 git commit -m "test: E2Eオーケストレータのlatest release作成 ${RUN_TAG}"
 release_created_at="$(now_utc)"
@@ -359,20 +369,7 @@ log ""
 log "=== Stage 6: latest release 更新 ==="
 
 release_updated_marker="RELEASE-2-${RUN_TAG}"
-cat > docs/index.html <<EOF
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <title>${release_updated_marker}</title>
-</head>
-<body>
-  <h1>${release_updated_marker}</h1>
-  <p>stage=release-2</p>
-</body>
-</html>
-EOF
-printf '%s\n' "release-2-${RUN_TAG}" > docs/release.txt
+write_release_content "$release_updated_marker" "release-2-${RUN_TAG}"
 git add docs/index.html docs/release.txt
 git commit -m "test: E2Eオーケストレータのlatest release更新 ${RUN_TAG}"
 release_updated_at="$(now_utc)"
