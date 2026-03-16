@@ -57,6 +57,8 @@ PR_HEAD_SHA=""
 BRANCH_PUSH_DONE=false
 PR_CREATED=false
 PR_CLOSED=false
+RELEASE_TAGS=()
+RELEASE_IDS=()
 
 log "=== E2Eオーケストレーター開始 ==="
 log "REPOSITORY: ${REPOSITORY}"
@@ -69,8 +71,24 @@ log "RUN_TAG: ${RUN_TAG}"
 
 cleanup() {
   local cleanup_failed=0
+  local release_id
+  local release_tag
 
   log "=== クリーンアップ開始 ==="
+
+  for release_id in "${RELEASE_IDS[@]}"; do
+    log "後片付け: Release ${release_id} を削除"
+    if ! gh_json DELETE "/repos/${REPOSITORY}/releases/${release_id}" >/dev/null 2>&1; then
+      log "後片付け: Release ${release_id} の削除はスキップ（既に削除済みの可能性）"
+    fi
+  done
+
+  for release_tag in "${RELEASE_TAGS[@]}"; do
+    log "後片付け: タグ ${release_tag} を削除"
+    if ! gh_json DELETE "/repos/${REPOSITORY}/git/refs/tags/${release_tag}" >/dev/null 2>&1; then
+      log "後片付け: タグ ${release_tag} の削除はスキップ（既に削除済みの可能性）"
+    fi
+  done
 
   # PRクローズ
   if [[ "$PR_CREATED" == true && "$PR_CLOSED" != true && -n "$PR_NUMBER" ]]; then
@@ -99,6 +117,29 @@ cleanup() {
 }
 
 trap cleanup EXIT
+
+create_release() {
+  local tag_name="$1"
+  local target_commitish="$2"
+  local release_name="$3"
+  local release_body="$4"
+  local response
+  local release_id
+
+  response="$(
+    gh_json POST "/repos/${REPOSITORY}/releases" \
+      -f tag_name="$tag_name" \
+      -f target_commitish="$target_commitish" \
+      -f name="$release_name" \
+      -f body="$release_body" \
+      -F draft=false \
+      -F prerelease=false
+  )"
+  release_id="$(jq -r '.id' <<<"$response")"
+
+  RELEASE_TAGS+=("$tag_name")
+  RELEASE_IDS+=("$release_id")
+}
 
 # --- Stage 1: Main Push ---
 
@@ -264,6 +305,100 @@ wait_deploy_workflow "pull_request" "$PR_HEAD_SHA" "$pr_closed_at" "PR close"
   --interval 5
 
 log "Stage 4 完了"
+
+# --- Stage 5: latest release 作成 ---
+
+log ""
+log "=== Stage 5: latest release 作成 ==="
+
+release_marker="RELEASE-1-${RUN_TAG}"
+cat > docs/index.html <<EOF
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>${release_marker}</title>
+</head>
+<body>
+  <h1>${release_marker}</h1>
+  <p>stage=release-1</p>
+</body>
+</html>
+EOF
+printf '%s\n' "release-1-${RUN_TAG}" > docs/release.txt
+git add docs/index.html docs/release.txt
+git commit -m "test: E2Eオーケストレータのlatest release作成 ${RUN_TAG}"
+release_created_at="$(now_utc)"
+git push origin "$TEST_BRANCH"
+release_sha="$(git rev-parse HEAD)"
+release_tag="v0.0.0-${RUN_TAG}-1"
+create_release "$release_tag" "$release_sha" "E2E Release 1 ${RUN_TAG}" "latest release 検証用 1"
+
+log "latest release 作成完了: tag=${release_tag} sha=${release_sha}"
+
+wait_deploy_workflow "release" "$release_sha" "$release_created_at" "latest release create"
+"${SCRIPT_DIR}/verify.sh" \
+  "${BASE_URL}/${SITE_NAME}/release-latest/" \
+  200 \
+  --require-trailing-slash \
+  --contains "$release_marker" \
+  --retries 20 \
+  --interval 5
+"${SCRIPT_DIR}/verify.sh" \
+  "${BASE_URL}/${SITE_NAME}/release-latest/release.txt" \
+  200 \
+  --contains "release-1-${RUN_TAG}" \
+  --retries 20 \
+  --interval 5
+
+log "Stage 5 完了"
+
+# --- Stage 6: latest release 更新 ---
+
+log ""
+log "=== Stage 6: latest release 更新 ==="
+
+release_updated_marker="RELEASE-2-${RUN_TAG}"
+cat > docs/index.html <<EOF
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>${release_updated_marker}</title>
+</head>
+<body>
+  <h1>${release_updated_marker}</h1>
+  <p>stage=release-2</p>
+</body>
+</html>
+EOF
+printf '%s\n' "release-2-${RUN_TAG}" > docs/release.txt
+git add docs/index.html docs/release.txt
+git commit -m "test: E2Eオーケストレータのlatest release更新 ${RUN_TAG}"
+release_updated_at="$(now_utc)"
+git push origin "$TEST_BRANCH"
+release_updated_sha="$(git rev-parse HEAD)"
+release_updated_tag="v0.0.0-${RUN_TAG}-2"
+create_release "$release_updated_tag" "$release_updated_sha" "E2E Release 2 ${RUN_TAG}" "latest release 検証用 2"
+
+log "latest release 更新完了: tag=${release_updated_tag} sha=${release_updated_sha}"
+
+wait_deploy_workflow "release" "$release_updated_sha" "$release_updated_at" "latest release update"
+"${SCRIPT_DIR}/verify.sh" \
+  "${BASE_URL}/${SITE_NAME}/release-latest/" \
+  200 \
+  --require-trailing-slash \
+  --contains "$release_updated_marker" \
+  --retries 20 \
+  --interval 5
+"${SCRIPT_DIR}/verify.sh" \
+  "${BASE_URL}/${SITE_NAME}/release-latest/release.txt" \
+  200 \
+  --contains "release-2-${RUN_TAG}" \
+  --retries 20 \
+  --interval 5
+
+log "Stage 6 完了"
 
 # --- 完了 ---
 
